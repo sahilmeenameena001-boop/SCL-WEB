@@ -118,14 +118,18 @@ Running the server on its own (for integration into another application):
 
 ```bash
 npm start                      # http://localhost:4100
-curl -X POST http://localhost:4100/api/jobs -H "Authorization: Bearer $SAR_APP_API_TOKEN" \
+curl -X POST http://localhost:4100/api/jobs \
      -H "Content-Type: application/json" -d '{"url":"https://www.example.com","options":{"maxPages":10}}'
 # → { jobId, launchUrl }  open launchUrl in the browser that has the extension
-curl -H "Authorization: Bearer $SAR_APP_API_TOKEN" http://localhost:4100/api/jobs/<jobId>
-curl -H "Authorization: Bearer $SAR_APP_API_TOKEN" -o site.zip http://localhost:4100/api/jobs/<jobId>/export
+curl http://localhost:4100/api/jobs/<jobId>
+curl -o site.zip http://localhost:4100/api/jobs/<jobId>/export
 ```
 
-Without `SAR_APP_API_TOKEN`/`SAR_UPLOAD_TOKEN_SECRET`, local secrets are generated once in `data/secrets.json`.
+The application API and the editor have no login or API token. Browser requests that change data are
+accepted only from the server's own pages (a write from another website is refused with 403); calls from
+your own backend (no `Origin` header) are accepted. Run the server on a private network or behind your own
+access control. The extension's job-scoped upload tokens are signed with `SAR_UPLOAD_TOKEN_SECRET`
+(generated once in `data/secrets.json` when not set).
 
 ### Configuration
 * `extension/extension.config.example.json` → copy to `extension.config.json` (or env `SAR_ALLOWED_APP_ORIGINS`, `SAR_ALLOWED_UPLOAD_ORIGINS`) and rebuild. Non-localhost origins must be https.
@@ -134,7 +138,7 @@ Without `SAR_APP_API_TOKEN`/`SAR_UPLOAD_TOKEN_SECRET`, local secrets are generat
 
 ## Deployment requirements
 * App server: Node ≥ 20 behind HTTPS at the origin compiled into the extension; request body limit ≥ `maxUploadBytes` at the proxy; persistent disk for `dataDir` (budget roughly 3 × captured bytes per job).
-* Secrets via environment: `SAR_APP_API_TOKEN`, `SAR_UPLOAD_TOKEN_SECRET`.
+* Secret via environment: `SAR_UPLOAD_TOKEN_SECRET`. The app API and editor have no login: keep the server private or put it behind your own authentication (reverse proxy, VPN).
 * Verification needs Chrome for Testing on the server (`npx puppeteer browsers install chrome`) and its system libraries on Linux.
 * Processing runs in worker threads with a single-host queue that resumes after restarts; for multiple hosts replace `ProcessingQueue` with a shared queue.
 * Extension distribution: build with production origins; ship unpacked, or pack a CRX with **your own** key (replace `extension/manifest-key.txt` with your public key) and force-install via enterprise policy. `chrome.debugger` shows Chrome's "is debugging this browser" bar during captures (suppressible only with `--silent-debugger-extension-api`).
@@ -145,13 +149,13 @@ Without `SAR_APP_API_TOKEN`/`SAR_UPLOAD_TOKEN_SECRET`, local secrets are generat
 Every template (a captured site, the bundled demo, or a blank starter) can be edited visually in the browser.
 
 ```bash
-npm run editor                  # builds the UI if needed, starts the server, prints a one-time login link
+npm run editor                  # builds the UI if needed, starts the server, prints the editor address
 npm run editor -- --project <projectId> --port 4100 --data-dir data --rebuild
 npm run build:editor            # build the UI only (app/editor/public)
 ```
 
-The login link expires after 10 minutes and works once (press `l` + Enter for another). Signing in with the
-application API token also works. Applications can request a link with `POST /api/editor/launch` (application token).
+Open `http://localhost:4100/` (it redirects to `/editor/`); there is no login. Link a dashboard to
+`/editor/` or `/editor/#project=<projectId>`; `POST /api/editor/launch` with `{ "projectId": "…" }` returns that URL.
 
 * **Preview** — the page rendered by the server at desktop (≥ 1280 px, scaled to fit), tablet (768 px) or mobile (390 px) width. Hover and selection outlines with a toolbar (parent, move section, duplicate, delete); double-click text to edit it in place (Enter saves, Esc cancels); drag sections and elements from **Add**, and images from **Assets** (onto an image: replace it; elsewhere in a section: section background; files from the desktop are uploaded first); drag the selected element to position it freely (stored as percentages, back in the flow on mobile by default).
 * **Panels** — Layers (tree of sections and elements, drag to reorder, hide per device), Add, Assets (upload, search, drag), Pages (add, delete, title and description), Theme (brand, logo, colours, Google fonts, smooth scrolling, site CSS).
@@ -174,7 +178,7 @@ npm run test:e2e    # real extension in Chrome for Testing against the fixture s
 
 Fixture coverage (`test/fixtures`): multiple pages with shared assets, lazy images (native and IntersectionObserver), relative paths, `<base>`, CSS `@import` (url and string), `srcset`, query-string variants (`theme.css?v=1|2`), shared/variant/unique sections, responsive CSS, a missing image, a redirect, a 403 page, robots-disallowed sitemap entry, calendar and query crawl traps, a logout link, a form posting to a third-party endpoint, analytics, an operational API call, and a never-finishing page.
 
-E2E coverage: the visual editor (login link, selection, inline editing, per-device styles, free dragging, drag and drop of sections and images, undo/redo, publish), full pipeline and export (plus rebuilding the exported template with config edits), configured vs unauthorized origins, invalid payloads, unconfigured upload destination, duplicate jobs, extension unavailable, load timeout, cancellation, transient and persistent upload failures with recovery.
+E2E coverage: the visual editor (opening it, selection, inline editing, per-device styles, free dragging, drag and drop of sections and images, undo/redo, publish), full pipeline and export (plus rebuilding the exported template with config edits), configured vs unauthorized origins, invalid payloads, unconfigured upload destination, duplicate jobs, extension unavailable, load timeout, cancellation, transient and persistent upload failures with recovery.
 
 Results of the last run are in `TEST-RESULTS.md`.
 

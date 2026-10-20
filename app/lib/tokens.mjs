@@ -30,9 +30,3 @@ export function bearer(req) {
   const h = req.headers.authorization || '';
   return h.startsWith('Bearer ') ? h.slice(7).trim() : null;
 }
-
-export function safeEqual(a, b) {
-  const x = Buffer.from(String(a || ''));
-  const y = Buffer.from(String(b || ''));
-  return x.length === y.length && timingSafeEqual(x, y);
-}

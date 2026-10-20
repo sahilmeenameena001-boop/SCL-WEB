@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Download, ExternalLink, House, Loader2, LogOut, Monitor, Redo2, Rocket, Smartphone, Tablet, Undo2 } from 'lucide-react';
+import { ChevronDown, Download, ExternalLink, House, Loader2, Monitor, Redo2, Rocket, Smartphone, Tablet, Undo2 } from 'lucide-react';
 import { useStore, setState, currentPage } from '../store.js';
-import { closeProject, exportZip, logout, publish, redo, renameProject, setPage, undo } from '../actions.js';
+import { closeProject, exportZip, publish, redo, renameProject, setPage, undo } from '../actions.js';
 import { DEVICES } from '../lib/style.js';
 import { CommitInput, IconButton, Segmented, cn } from './ui.jsx';
 
@@ -65,7 +65,6 @@ export function TopBar() {
       >
         {publishing ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />} Publish
       </button>
-      <IconButton icon={LogOut} title="Sign out" onClick={logout} />
     </header>
   );
 }

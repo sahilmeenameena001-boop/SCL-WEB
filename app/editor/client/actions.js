@@ -27,35 +27,10 @@ async function busy(fn) {
 // session and projects
 
 export async function boot() {
-  const hash = new URLSearchParams(location.hash.slice(1));
-  const code = hash.get('code');
-  const project = hash.get('project');
-  if (code) {
-    history.replaceState(null, '', `${location.pathname}${project ? `#project=${encodeURIComponent(project)}` : ''}`);
-    try {
-      await api.login({ code });
-    } catch (e) {
-      toast(`Login link: ${e.message}. Ask for a new link or sign in with the API token.`, { kind: 'error', ms: 8000 });
-    }
-  }
-  const { authenticated } = await api.session();
-  setState({ auth: authenticated ? 'in' : 'out' });
-  if (!authenticated) return;
+  const project = new URLSearchParams(location.hash.slice(1)).get('project');
   if (project) await openProject(project).catch(() => loadProjects());
   else await loadProjects();
-}
-
-export async function login(token) {
-  await api.login({ token });
-  setState({ auth: 'in' });
-  await loadProjects();
-}
-
-export async function logout() {
-  await flushDesign();
-  await api.logout();
-  setState({ auth: 'out', projectId: null, data: null, projects: null });
-  history.replaceState(null, '', location.pathname);
+  setState({ ready: true });
 }
 
 export async function loadProjects() {

@@ -26,9 +26,6 @@ async function request(method, path, { json, body, query, keepalive = false } = 
 const P = (id, sub = '') => `projects/${encodeURIComponent(id)}${sub ? `/${sub}` : ''}`;
 
 export const api = {
-  session: () => request('GET', 'session'),
-  login: (creds) => request('POST', 'session', { json: creds }),
-  logout: () => request('DELETE', 'session'),
   sources: () => request('GET', 'sources'),
   projects: () => request('GET', 'projects'),
   createProject: (body) => request('POST', 'projects', { json: body }),

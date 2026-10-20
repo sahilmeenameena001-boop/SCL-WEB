@@ -24,8 +24,8 @@ const DEFAULTS = {
 
 /**
  * Configuration sources (later wins): defaults, app/config.json, environment.
- * Secrets (SAR_APP_API_TOKEN, SAR_UPLOAD_TOKEN_SECRET) come from the environment; when absent
- * they are generated once and stored in <dataDir>/secrets.json (local development only).
+ * The secret that signs the extension's job-scoped upload tokens (SAR_UPLOAD_TOKEN_SECRET) comes from
+ * the environment; when absent it is generated once and stored in <dataDir>/secrets.json.
  */
 export function loadConfig(overrides = {}) {
   const file = process.env.SAR_APP_CONFIG || join(ROOT, 'app/config.json');
@@ -46,11 +46,10 @@ export function loadConfig(overrides = {}) {
   mkdirSync(cfg.dataDir, { recursive: true });
   const secretsFile = join(cfg.dataDir, 'secrets.json');
   let secrets = existsSync(secretsFile) ? JSON.parse(readFileSync(secretsFile, 'utf8')) : {};
-  if (!process.env.SAR_APP_API_TOKEN && !secrets.appApiToken) secrets.appApiToken = randomBytes(24).toString('base64url');
+  delete secrets.appApiToken; // the application API no longer uses a token
   if (!process.env.SAR_UPLOAD_TOKEN_SECRET && !secrets.uploadTokenSecret) secrets.uploadTokenSecret = randomBytes(32).toString('base64url');
   mkdirSync(dirname(secretsFile), { recursive: true });
   writeFileSync(secretsFile, JSON.stringify(secrets, null, 2), { mode: 0o600 });
-  cfg.appApiToken = overrides.appApiToken || process.env.SAR_APP_API_TOKEN || secrets.appApiToken;
   cfg.uploadTokenSecret = overrides.uploadTokenSecret || process.env.SAR_UPLOAD_TOKEN_SECRET || secrets.uploadTokenSecret;
   return cfg;
 }

@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
 const listeners = new Set();
 
 let state = {
-  auth: 'unknown', // unknown | out | in
+  ready: false,
   projects: null,
   sources: null,
   projectId: null,

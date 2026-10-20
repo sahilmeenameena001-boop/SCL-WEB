@@ -1,14 +1,14 @@
 // HTTP routes for the visual editor, mounted by app/server.mjs.
 //   /editor/                       editor UI (static, app/editor/public)
-//   /editor-preview/<project>/...  instrumented live preview + site assets (session cookie)
-//   /sites/<project>/...           last built site (dist/) (session cookie)
-//   /api/editor/...                JSON API (session cookie or application bearer token)
+//   /editor-preview/<project>/...  instrumented live preview + site assets
+//   /sites/<project>/...           last built site (dist/)
+//   /api/editor/...                JSON API
+// No login: writes from the editor UI carry X-SB-Editor; writes sent by another website (a
+// cross-origin Origin header without that header) are refused; server-to-server calls are allowed.
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, relative, resolve, sep } from 'node:path';
-import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { zipSync } from 'fflate';
-import { signToken, verifyToken, bearer, safeEqual } from '../../lib/tokens.mjs';
 import { ProjectStore } from './project-store.mjs';
 import { applyOps, BLOCK_LIST, ELEMENT_LIST } from './ops.mjs';
 import { renderEditorPage, findPage, brandCssFor } from './preview.mjs';
@@ -20,8 +20,6 @@ import { EditError } from './site-model.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = resolve(HERE, '../public');
 const ROOT = resolve(HERE, '../../..');
-const COOKIE = 'sb_session';
-const SESSION_TTL = 12 * 3600_000;
 
 export const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
@@ -64,14 +62,6 @@ async function readJson(req, limit = 5_000_000) {
   } catch {
     throw new HttpError(400, 'invalid JSON');
   }
-}
-
-function cookie(req, name) {
-  for (const part of String(req.headers.cookie || '').split(';')) {
-    const [k, ...v] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(v.join('='));
-  }
-  return null;
 }
 
 function serveFile(res, file, extra = {}) {
@@ -164,55 +154,22 @@ function zipDir(dir, filter = () => true) {
 
 export function createEditorRoutes({ config, jobStore, log = console.log }) {
   const store = new ProjectStore(config.dataDir);
-  const launchCodes = new Map();
-  const secret = config.uploadTokenSecret;
 
-  const sessionValid = (t) => verifyToken(secret, t, { jobId: 'editor', scope: 'editor-session' });
-  const authed = (req) => safeEqual(bearer(req), config.appApiToken) || sessionValid(cookie(req, COOKIE));
-  const requireAuth = (req) => {
-    if (!authed(req)) throw new HttpError(401, 'editor session required');
-  };
   const requireWrite = (req) => {
-    requireAuth(req);
-    // CSRF: browsers cannot add this header cross-origin without a CORS preflight we never answer.
-    if (!bearer(req) && req.headers['x-sb-editor'] !== '1') throw new HttpError(403, 'missing editor header');
-  };
-  const sessionCookie = () => {
-    const { token } = signToken(secret, { jobId: 'editor', scope: 'editor-session', ttlMs: SESSION_TTL });
-    return `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL / 1000}`;
+    if (req.headers['x-sb-editor'] === '1') return; // browsers cannot add this header cross-origin without a CORS preflight we never answer
+    const origin = req.headers.origin;
+    if (origin && origin !== config.publicOrigin) throw new HttpError(403, `requests from ${origin} are not allowed`);
   };
 
-  function createLaunchUrl(projectId) {
-    const code = randomBytes(18).toString('base64url');
-    launchCodes.set(code, { expiresAt: Date.now() + config.launchCodeTtlMs });
-    return `${config.publicOrigin}/editor/#code=${code}${projectId ? `&project=${encodeURIComponent(projectId)}` : ''}`;
-  }
+  const editorUrl = (projectId) => `${config.publicOrigin}/editor/${projectId ? `#project=${encodeURIComponent(projectId)}` : ''}`;
 
   async function api(req, res, parts) {
     const m = req.method;
-    // POST /api/editor/launch  (application token) -> one-time editor URL for the dashboard
+    // POST /api/editor/launch { projectId? } -> editor URL for a dashboard link
     if (m === 'POST' && parts[0] === 'launch') {
-      if (!safeEqual(bearer(req), config.appApiToken)) throw new HttpError(401, 'application token required');
       const body = await readJson(req);
-      return sendJson(res, 200, { url: createLaunchUrl(body.projectId) });
+      return sendJson(res, 200, { url: editorUrl(body.projectId) });
     }
-    // POST /api/editor/session { code } | { token }  -> session cookie
-    if (m === 'POST' && parts[0] === 'session') {
-      if (req.headers.origin && req.headers.origin !== config.publicOrigin) throw new HttpError(403, 'cross-origin login refused');
-      const body = await readJson(req);
-      let ok = false;
-      if (body.code) {
-        const entry = launchCodes.get(String(body.code));
-        launchCodes.delete(String(body.code));
-        ok = !!entry && entry.expiresAt > Date.now();
-      } else if (body.token) ok = safeEqual(body.token, config.appApiToken);
-      if (!ok) throw new HttpError(401, 'invalid or expired login');
-      return sendJson(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie() });
-    }
-    if (m === 'GET' && parts[0] === 'session') return sendJson(res, 200, { authenticated: authed(req) });
-    if (m === 'DELETE' && parts[0] === 'session') return sendJson(res, 200, { ok: true }, { 'Set-Cookie': `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });
-
-    requireAuth(req);
 
     if (parts[0] === 'sources' && m === 'GET') {
       const jobs = (jobStore?.list() || [])
@@ -319,7 +276,6 @@ export function createEditorRoutes({ config, jobStore, log = console.log }) {
   }
 
   function preview(req, res, parts) {
-    requireAuth(req);
     const id = parts[0];
     const site = store.siteDir(id);
     const rel = decodeURIComponent(parts.slice(1).join('/'));
@@ -341,7 +297,6 @@ export function createEditorRoutes({ config, jobStore, log = console.log }) {
   }
 
   function built(req, res, parts) {
-    requireAuth(req);
     const dist = join(store.siteDir(parts[0]), 'dist');
     let file = safeJoin(dist, decodeURIComponent(parts.slice(1).join('/')));
     if (existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');
@@ -381,5 +336,5 @@ export function createEditorRoutes({ config, jobStore, log = console.log }) {
     return false;
   }
 
-  return { handle, store, createLaunchUrl };
+  return { handle, store, editorUrl };
 }

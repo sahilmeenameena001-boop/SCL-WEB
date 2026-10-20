@@ -1,5 +1,5 @@
-// Visual editor HTTP API (app/editor/server/routes.mjs) through the real app server: sessions,
-// CSRF guard, projects, the instrumented preview, edit operations with undo/redo, assets,
+// Visual editor HTTP API (app/editor/server/routes.mjs) through the real app server: no login,
+// cross-site write guard, projects, the instrumented preview, edit operations with undo/redo, assets,
 // publishing and export.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,17 +12,15 @@ import { createAppServer } from '../../app/server.mjs';
 import { assetDropAction } from '../../app/editor/client/lib/drop.js';
 import { PUBLIC_DIR } from '../../app/editor/build.mjs';
 
-const APP_TOKEN = 'editor-app-token-1234567890';
 let app;
 let base;
 let dataDir;
-let cookie;
 let projectId;
 
 before(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'sb-editor-api-'));
   app = createAppServer(
-    { port: 0, host: '127.0.0.1', publicOrigin: 'http://127.0.0.1', dataDir, appApiToken: APP_TOKEN, uploadTokenSecret: 'editor-secret-abcdefghijklmnop', extensionId: 'a'.repeat(32) },
+    { port: 0, host: '127.0.0.1', publicOrigin: 'http://127.0.0.1', dataDir, uploadTokenSecret: 'editor-secret-abcdefghijklmnop', extensionId: 'a'.repeat(32) },
     { faults: {}, log: () => {} },
   );
   const addr = await app.listen();
@@ -34,11 +32,11 @@ after(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-/** Request as the logged-in editor UI (session cookie + X-SB-Editor header). */
+/** Request as the editor UI (which sends the X-SB-Editor header). */
 const ui = (path, { method = 'GET', body, headers = {}, raw } = {}) =>
   fetch(base + path, {
     method,
-    headers: { Cookie: cookie, 'X-SB-Editor': '1', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...headers },
+    headers: { 'X-SB-Editor': '1', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...headers },
     body: raw ?? (body !== undefined ? JSON.stringify(body) : undefined),
   });
 const json = async (res, status = 200) => {
@@ -56,31 +54,22 @@ const preview = async (route = 'index.html') => {
 const siteFile = (rel) => join(dataDir, 'sites', projectId, 'site', rel);
 const readJson = (rel) => JSON.parse(readFileSync(siteFile(rel), 'utf8'));
 
-test('login: one-time launch link, API token, and no access without a session', async () => {
-  assert.equal((await fetch(`${base}/api/editor/projects`)).status, 401);
-  assert.equal((await fetch(`${base}/editor-preview/p_00000000/index.html`)).status, 401);
-  assert.equal((await fetch(`${base}/api/editor/launch`, { method: 'POST' })).status, 401, 'launch needs the application token');
-
-  const { url } = await json(await fetch(`${base}/api/editor/launch`, { method: 'POST', headers: { Authorization: `Bearer ${APP_TOKEN}` } }));
-  const code = new URLSearchParams(new URL(url).hash.slice(1)).get('code');
-  assert.ok(url.startsWith(`${base}/editor/#code=`));
-  const login = (body, headers = {}) => fetch(`${base}/api/editor/session`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
-  assert.equal((await login({ code }, { Origin: 'https://evil.example' })).status, 403, 'cross-origin login refused');
-  const ok = await login({ code });
-  assert.equal(ok.status, 200);
-  cookie = ok.headers.get('set-cookie').split(';')[0];
-  assert.match(ok.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
-  assert.equal((await login({ code })).status, 401, 'launch codes are single use');
-  assert.equal((await login({ token: 'wrong' })).status, 401);
-  assert.equal((await login({ token: APP_TOKEN })).status, 200);
-  assert.deepEqual(await json(await ui('/api/editor/session')), { authenticated: true });
-  // The app server exposes the same launch-link factory used by `npm run editor`.
-  assert.match(app.editor.createLaunchUrl('p_abcdefgh'), /#code=[\w-]+&project=p_abcdefgh$/);
+test('no login: the editor and its API are open; the launch endpoint returns the editor URL', async () => {
+  assert.equal((await fetch(`${base}/api/editor/projects`)).status, 200);
+  const { url } = await json(await fetch(`${base}/api/editor/launch`, { method: 'POST' }));
+  assert.equal(url, `${base}/editor/`);
+  const withProject = await json(await fetch(`${base}/api/editor/launch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId: 'p_abcdefgh' }) }));
+  assert.equal(withProject.url, `${base}/editor/#project=p_abcdefgh`);
+  assert.equal(app.editor.editorUrl('p_abcdefgh'), `${base}/editor/#project=p_abcdefgh`);
+  assert.equal((await fetch(`${base}/api/editor/session`)).status, 404, 'session endpoints are gone');
 });
 
-test('writes require the X-SB-Editor header (CSRF guard)', async () => {
-  const res = await fetch(`${base}/api/editor/projects`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'blank' }) });
-  assert.equal(res.status, 403);
+test('writes from other websites are refused; the editor UI and server-to-server calls are allowed', async () => {
+  const post = (headers) => fetch(`${base}/api/editor/projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ from: 'nope' }) });
+  assert.equal((await post({ Origin: 'https://evil.example' })).status, 403, 'cross-site form/fetch');
+  assert.equal((await post({})).status, 400, 'no Origin (server-to-server) passes the guard');
+  assert.equal((await post({ Origin: base })).status, 400, 'same origin passes the guard');
+  assert.equal((await post({ Origin: 'https://evil.example', 'X-SB-Editor': '1' })).status, 400, 'the editor header (needs a CORS preflight cross-site) passes');
 });
 
 test('a blank project has pages, sections, blocks, assets and an empty history', async () => {
@@ -274,7 +263,6 @@ test('publish builds the static site; exports are template and site ZIPs', async
   const html = await site.text();
   assert.doesNotMatch(html, /data-sb-(text|html|attrs|item)=|sb-editor-data/, 'no editor markup in the published site');
   assert.match(html, /Edited headline/);
-  assert.equal((await fetch(base + pub.url)).status, 401, 'published preview needs the session');
 
   const siteZip = await ui(`/api/editor/projects/${projectId}/export?kind=site`);
   assert.equal(siteZip.headers.get('content-type'), 'application/zip');

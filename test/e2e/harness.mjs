@@ -33,7 +33,7 @@ export async function startStack({ faults = {}, verification = {}, port = 4100 }
   const fixture = await startFixtureServer();
   const logs = [];
   const app = createAppServer(
-    { port, host: 'localhost', dataDir, appApiToken: 'test-app-token-123456', uploadTokenSecret: 'test-secret-abcdefghijklmnop', verification: { pageTimeoutMs: 20_000, ...verification } },
+    { port, host: 'localhost', dataDir, uploadTokenSecret: 'test-secret-abcdefghijklmnop', verification: { pageTimeoutMs: 20_000, ...verification } },
     { faults, log: (...a) => logs.push(a.join(' ')) }
   );
   await app.listen();

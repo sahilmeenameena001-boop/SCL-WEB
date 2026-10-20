@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, ROOT } from './lib/config.mjs';
-import { signToken, verifyToken, bearer, safeEqual } from './lib/tokens.mjs';
+import { signToken, verifyToken, bearer } from './lib/tokens.mjs';
 import { JobStore, newJobId, TERMINAL } from './lib/job-store.mjs';
 import { normalizeOptions, validateHttpUrl, ProtocolError } from '../extension/src/shared/protocol.js';
 import { createEditorRoutes } from './editor/server/routes.mjs';
@@ -107,13 +107,12 @@ export function createAppServer(overrides = {}, { faults = {}, log = console.log
   const launchCodes = new Map(); // code -> { jobId, expiresAt }
   const editor = createEditorRoutes({ config, jobStore: store, log });
 
-  const requireApp = (req) => {
-    if (!safeEqual(bearer(req), config.appApiToken)) throw new HttpError(401, 'application token required');
-  };
-  const requireAppOrControl = (req, jobId) => {
-    const t = bearer(req);
-    if (safeEqual(t, config.appApiToken)) return;
-    if (!verifyToken(config.uploadTokenSecret, t, { jobId, scope: 'control' })) throw new HttpError(401, 'job token required');
+  // The application API needs no token. Browsers may only change things from this server's own
+  // pages: a write sent by another website (cross-origin Origin header) is refused. Server-to-server
+  // calls (no Origin header) are allowed.
+  const requireSameOrigin = (req) => {
+    const origin = req.headers.origin;
+    if (origin && origin !== config.publicOrigin) throw new HttpError(403, `requests from ${origin} are not allowed`);
   };
   const requireUpload = (req, jobId) => {
     // Only the extension (or a non-browser client) may upload: reject other web origins.
@@ -229,7 +228,7 @@ export function createAppServer(overrides = {}, { faults = {}, log = console.log
 
     // --- application API -------------------------------------------------------------------
     if (m === 'POST' && parts[1] === 'jobs' && parts.length === 2) {
-      requireApp(req);
+      requireSameOrigin(req);
       const { job, launchUrl } = createJob(await readJson(req));
       return send(res, 201, { jobId: job.jobId, launchUrl, job: publicJob(job) });
     }
@@ -253,11 +252,10 @@ export function createAppServer(overrides = {}, { faults = {}, log = console.log
     if (parts[1] === 'jobs' && parts[2]) {
       const jobId = parts[2];
       if (m === 'GET' && parts.length === 3) {
-        requireAppOrControl(req, jobId);
         return send(res, 200, publicJob(getJob(jobId)));
       }
       if (m === 'POST' && parts[3] === 'cancel') {
-        requireAppOrControl(req, jobId);
+        requireSameOrigin(req);
         const job = store.update(jobId, (j) => {
           if (TERMINAL.includes(j.status)) return;
           j.cancelRequested = true;
@@ -266,7 +264,7 @@ export function createAppServer(overrides = {}, { faults = {}, log = console.log
         return send(res, 200, publicJob(job));
       }
       if (m === 'POST' && parts[3] === 'extension-unavailable') {
-        requireAppOrControl(req, jobId);
+        requireSameOrigin(req);
         const body = await readJson(req);
         const job = store.update(jobId, (j) => {
           if (j.status !== 'awaiting_extension') return;
@@ -276,7 +274,6 @@ export function createAppServer(overrides = {}, { faults = {}, log = console.log
         return send(res, 200, publicJob(job));
       }
       if (m === 'GET' && parts[3] === 'export') {
-        requireAppOrControl(req, jobId);
         const job = getJob(jobId);
         if (!job.exportFile || !existsSync(job.exportFile)) throw new HttpError(404, 'export not available yet');
         res.writeHead(200, {
@@ -353,6 +350,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const app = createAppServer();
   await app.listen();
   console.log(`SAR template server on ${app.config.publicOrigin} (extension ${app.config.extensionId || 'NOT BUILT'})`);
-  console.log(`Application API token: stored in ${join(app.config.dataDir, 'secrets.json')} (or SAR_APP_API_TOKEN)`);
+  console.log(`Site editor: ${app.config.publicOrigin}/editor/`);
 }
 

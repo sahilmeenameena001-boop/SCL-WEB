@@ -1,4 +1,4 @@
-// Visual editor in a real browser: login link, project creation, selection, inline text editing,
+// Visual editor in a real browser: opening the editor, project creation, selection, inline text editing,
 // per-device styles, free dragging, drag and drop from the panels, undo, device preview, publish.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,7 +19,7 @@ let projectId;
 before(async () => {
   if (editorBuildIsStale()) await buildEditor();
   dataDir = mkdtempSync(join(tmpdir(), 'sb-editor-e2e-'));
-  app = createAppServer({ port: 0, host: '127.0.0.1', dataDir, appApiToken: 'e2e-app-token-123456', uploadTokenSecret: 'e2e-secret-abcdefghijklmnop' }, { log: () => {} });
+  app = createAppServer({ port: 0, host: '127.0.0.1', dataDir, uploadTokenSecret: 'e2e-secret-abcdefghijklmnop' }, { log: () => {} });
   const { port } = await app.listen();
   app.config.publicOrigin = `http://127.0.0.1:${port}`;
   browser = await puppeteer.launch({ headless: process.env.HEADFUL ? false : true, args: ['--no-first-run'] });
@@ -65,10 +65,10 @@ const clickText = async (selector, text) => {
   await handle.click();
 };
 
-test('login link and project creation', { timeout: 60_000 }, async () => {
-  await page.goto(app.editor.createLaunchUrl());
+test('the site root opens the editor without login; create a project', { timeout: 60_000 }, async () => {
+  await page.goto(`${app.config.publicOrigin}/`);
   await page.waitForSelector('input[aria-label="Site name"]');
-  assert.equal(new URL(page.url()).hash, '', 'the login code is removed from the address bar');
+  assert.equal(new URL(page.url()).pathname, '/editor/');
   await page.type('input[aria-label="Site name"]', 'E2E Studio');
   await clickText('button', 'Create');
   await until(() => new URL(page.url()).hash.startsWith('#project='), 'project open');

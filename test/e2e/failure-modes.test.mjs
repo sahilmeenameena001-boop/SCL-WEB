@@ -16,7 +16,8 @@ async function waitExt(page, jobId, timeoutMs = 300_000) {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
     const s = await ext(page, { v: 1, type: 'getStatus', jobId });
-    if (['completed', 'completed_with_warnings', 'failed', 'cancelled'].includes(s.status.status)) return s.status;
+    // Right after the launch page opens the extension may not know the job yet (no status): keep polling.
+    if (['completed', 'completed_with_warnings', 'failed', 'cancelled'].includes(s?.status?.status)) return s.status;
     await sleep(1000);
   }
   throw new Error('extension job did not finish');

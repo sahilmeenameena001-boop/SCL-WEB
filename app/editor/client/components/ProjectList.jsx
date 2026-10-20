@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
-import { FileArchive, Globe, LayoutTemplate, LogOut, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { FileArchive, Globe, LayoutTemplate, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { useStore } from '../store.js';
-import { createProject, deleteProject, importProject, logout, openProject } from '../actions.js';
+import { createProject, deleteProject, importProject, openProject } from '../actions.js';
 import { Empty, IconButton } from './ui.jsx';
 
 const ago = (t) => {
@@ -26,7 +26,6 @@ export function ProjectList() {
           <LayoutTemplate size={15} />
         </div>
         <h1 className="flex-1 text-[15px] font-semibold">Sites</h1>
-        <IconButton icon={LogOut} title="Sign out" onClick={logout} />
       </header>
 
       <main className="mx-auto max-w-5xl space-y-8 px-6 py-8">
