@@ -33,6 +33,7 @@ app/
   cli.mjs                  the one command
   processing/              package → reconstruct → templatise → verify → report → export
   processing/template-runtime/  build/serve/engine/runtime guard shipped inside every template
+  editor/                  visual editor: server (API, operations), client (React UI), library (blocks)
 test/fixtures/             reproducible fixture website
 test/unit, test/e2e        tests
 ```
@@ -139,16 +140,41 @@ Without `SAR_APP_API_TOKEN`/`SAR_UPLOAD_TOKEN_SECRET`, local secrets are generat
 * Extension distribution: build with production origins; ship unpacked, or pack a CRX with **your own** key (replace `extension/manifest-key.txt` with your public key) and force-install via enterprise policy. `chrome.debugger` shows Chrome's "is debugging this browser" bar during captures (suppressible only with `--silent-debugger-extension-api`).
 * Licensing: the extension build is derived from Save All Resources (GPL-3.0-or-later, per its package.json); distribute it with source. The application talks to it only through messaging.
 
+## Visual editor
+
+Every template (a captured site, the bundled demo, or a blank starter) can be edited visually in the browser.
+
+```bash
+npm run editor                  # builds the UI if needed, starts the server, prints a one-time login link
+npm run editor -- --project <projectId> --port 4100 --data-dir data --rebuild
+npm run build:editor            # build the UI only (app/editor/public)
+```
+
+The login link expires after 10 minutes and works once (press `l` + Enter for another). Signing in with the
+application API token also works. Applications can request a link with `POST /api/editor/launch` (application token).
+
+* **Preview** — the page rendered by the server at desktop (≥ 1280 px, scaled to fit), tablet (768 px) or mobile (390 px) width. Hover and selection outlines with a toolbar (parent, move section, duplicate, delete); double-click text to edit it in place (Enter saves, Esc cancels); drag sections and elements from **Add**, and images from **Assets** (onto an image: replace it; elsewhere in a section: section background; files from the desktop are uploaded first); drag the selected element to position it freely (stored as percentages, back in the flow on mobile by default).
+* **Panels** — Layers (tree of sections and elements, drag to reorder, hide per device), Add, Assets (upload, search, drag), Pages (add, delete, title and description), Theme (brand, logo, colours, Google fonts, smooth scrolling, site CSS).
+* **Inspector** — Content (fields, links, images, list items), Style (typography, layout, size, spacing, background, border, effects, hover; per device), Animate (entrance, text, loop, hover and parallax effects with preview), Advanced (visibility, free position, classes, attributes, custom CSS, section HTML).
+* **Top bar** — undo/redo (also Ctrl+Z / Ctrl+Shift+Z; every change is one server-side undo step), Publish (builds `dist/`, served at `/sites/<project>/`), Export (template ZIP or static site ZIP).
+
+Layout: `app/editor/server` (API, edit operations, instrumented preview, project store), `app/editor/client`
+(React UI: `lib/bridge.js` drives the preview iframe, `actions.js` sends operations, `lib/*.js` hold the pure
+logic), `app/editor/library` (blocks and placeholders), `app/editor/build.mjs` (esbuild + Tailwind CSS).
+Edits are stored in the template itself (`content/`, `components/`, `site.config.json`, `design.json`), so an
+edited template still builds with `npm run build` on its own.
+
 ## Tests
 
 ```bash
-npm test            # unit: URL scope, protocol/messaging validation, client, sitemap/robots, CSS/srcset/HTML reconstruction, sections, fields, engine, build + config changes, server auth/uploads
-npm run test:e2e    # real extension in Chrome for Testing against the fixture site
+npm test            # unit: URL scope, protocol/messaging validation, client, sitemap/robots, CSS/srcset/HTML reconstruction, sections, fields, engine, build + config changes, server auth/uploads,
+                    # editor API/operations/undo, editor UI logic (drops, styles, patches), editor build
+npm run test:e2e    # real extension in Chrome for Testing against the fixture site; editor UI in Chrome
 ```
 
 Fixture coverage (`test/fixtures`): multiple pages with shared assets, lazy images (native and IntersectionObserver), relative paths, `<base>`, CSS `@import` (url and string), `srcset`, query-string variants (`theme.css?v=1|2`), shared/variant/unique sections, responsive CSS, a missing image, a redirect, a 403 page, robots-disallowed sitemap entry, calendar and query crawl traps, a logout link, a form posting to a third-party endpoint, analytics, an operational API call, and a never-finishing page.
 
-E2E coverage: full pipeline and export (plus rebuilding the exported template with config edits), configured vs unauthorized origins, invalid payloads, unconfigured upload destination, duplicate jobs, extension unavailable, load timeout, cancellation, transient and persistent upload failures with recovery.
+E2E coverage: the visual editor (login link, selection, inline editing, per-device styles, free dragging, drag and drop of sections and images, undo/redo, publish), full pipeline and export (plus rebuilding the exported template with config edits), configured vs unauthorized origins, invalid payloads, unconfigured upload destination, duplicate jobs, extension unavailable, load timeout, cancellation, transient and persistent upload failures with recovery.
 
 Results of the last run are in `TEST-RESULTS.md`.
 

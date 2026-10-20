@@ -10,6 +10,7 @@ import { loadConfig, ROOT } from './lib/config.mjs';
 import { signToken, verifyToken, bearer, safeEqual } from './lib/tokens.mjs';
 import { JobStore, newJobId, TERMINAL } from './lib/job-store.mjs';
 import { normalizeOptions, validateHttpUrl, ProtocolError } from '../extension/src/shared/protocol.js';
+import { createEditorRoutes } from './editor/server/routes.mjs';
 
 const PUBLIC_DIR = join(ROOT, 'app/public');
 const STATIC_TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css' };
@@ -104,6 +105,7 @@ export function createAppServer(overrides = {}, { faults = {}, log = console.log
   const store = new JobStore(config.dataDir);
   const queue = new ProcessingQueue(store, config, log);
   const launchCodes = new Map(); // code -> { jobId, expiresAt }
+  const editor = createEditorRoutes({ config, jobStore: store, log });
 
   const requireApp = (req) => {
     if (!safeEqual(bearer(req), config.appApiToken)) throw new HttpError(401, 'application token required');
@@ -208,10 +210,17 @@ export function createAppServer(overrides = {}, { faults = {}, log = console.log
     const url = new URL(req.url, config.publicOrigin);
     const parts = url.pathname.split('/').filter(Boolean);
     const m = req.method;
+    if (await editor.handle(req, res, url)) return;
+
+    // The site root opens the visual editor (capture launch links always point at /capture.html).
+    if ((m === 'GET' || m === 'HEAD') && url.pathname === '/') {
+      res.writeHead(302, { Location: '/editor/', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
 
     // Static launcher assets (no listing, fixed directory).
-    if (m === 'GET' && (url.pathname === '/' || ['capture.html', 'launcher.js', 'sar-client.js'].includes(parts[0]))) {
-      const file = url.pathname === '/' ? 'capture.html' : parts[0];
+    if (m === 'GET' && ['capture.html', 'launcher.js', 'sar-client.js'].includes(parts[0]) && parts.length === 1) {
+      const file = parts[0];
       res.writeHead(200, { 'Content-Type': STATIC_TYPES[extname(file)], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       return createReadStream(join(PUBLIC_DIR, file)).pipe(res);
     }
@@ -332,6 +341,7 @@ export function createAppServer(overrides = {}, { faults = {}, log = console.log
     queue,
     faults,
     server,
+    editor,
     createJob,
     listen: () =>
       new Promise((r) => server.listen(config.port, config.host === 'localhost' ? undefined : config.host, () => r(server.address()))),

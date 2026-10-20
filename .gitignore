@@ -7,3 +7,4 @@ scratch/
 *.log
 extension/extension.config.json
 app/config.json
+app/editor/public/

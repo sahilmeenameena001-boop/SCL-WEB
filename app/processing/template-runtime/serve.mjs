@@ -49,7 +49,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (!existsSync(join(here, 'dist'))) buildSite({ root: here });
   if (process.argv.includes('--watch')) {
     let timer;
-    for (const dir of ['site.config.json', 'content', 'components', 'layouts', 'pages', 'assets']) {
+    for (const dir of ['site.config.json', 'design.json', 'content', 'components', 'layouts', 'pages', 'assets']) {
       if (!existsSync(join(here, dir))) continue;
       watch(join(here, dir), { recursive: true }, () => {
         clearTimeout(timer);

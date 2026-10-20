@@ -26,7 +26,11 @@ async function api(path, { method = 'GET', token, body } = {}) {
 async function main() {
   const code = new URLSearchParams(location.hash.slice(1)).get('launch');
   history.replaceState(null, '', location.pathname); // keep the one-time code out of history
-  if (!code) return setState('Missing launch code. Start jobs with `npm run capture -- <url>`.', true);
+  if (!code) {
+    setState('This page only runs capture jobs started from a launch link.', true);
+    $('detail').innerHTML = 'Start a capture with <code>npm run capture -- &lt;url&gt;</code> or <code>POST /api/jobs</code>. To edit sites, open the <a href="/editor/">site editor</a>.';
+    return;
+  }
 
   const launch = await api(`/api/launch/${encodeURIComponent(code)}`, { method: 'POST' });
   const sar = createSaveAllResourcesClient({ extensionId: launch.extensionId });

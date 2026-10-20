@@ -13,6 +13,10 @@
 //   {{@sectionid}}        id of the section instance being rendered
 //   {{@head-start}} {{@head-end}}  generated head content (CSP, runtime guard, brand.css, integrations)
 // Content values may reference configuration with {{brand.name}}, {{images.hero}}, … .
+//
+// Editor hooks (optional, used only by the visual editor's preview):
+//   ctx.mark({ kind, path, sectionId }, output)  wraps every field value so it can be mapped back
+//   ctx.markItem(listPath, index, sectionId)      emitted before every repeated list item
 
 const TOKEN = /\{\{@([a-z-]*)(?:\s+([^}]*?))?\s*\}\}/g;
 
@@ -97,20 +101,33 @@ export function parse(template) {
  */
 export function render(template, ctx) {
   const tree = typeof template === 'string' ? parse(template) : template;
-  return renderNodes(tree.children, ctx, ctx.scope || {});
+  return renderNodes(tree.children, ctx, ctx.scope || {}, ctx.scopePath || '');
 }
 
-function renderNodes(nodes, ctx, scope) {
+const joinPath = (a, b) => (a && b ? `${a}.${b}` : a || b);
+
+function renderNodes(nodes, ctx, scope, scopePath) {
   let out = '';
   for (const node of nodes) {
     if (node.type === 'text') out += node.value;
     else if (node.type === 'each') {
       const list = getPath(scope, node.path);
-      if (Array.isArray(list)) for (const item of list) out += renderNodes(node.children, ctx, item ?? {});
-    } else out += renderTag(node, ctx, scope);
+      const listPath = joinPath(scopePath, node.path);
+      if (Array.isArray(list))
+        list.forEach((item, i) => {
+          if (ctx.markItem) out += ctx.markItem(listPath, i, ctx.sectionId);
+          out += renderNodes(node.children, ctx, item ?? {}, `${listPath}.${i}`);
+        });
+    } else {
+      const html = renderTag(node, ctx, scope);
+      const kind = MARKED[node.name];
+      out += ctx.mark && kind ? ctx.mark({ kind, path: kind === 'brand' ? node.arg : joinPath(scopePath, node.arg), sectionId: ctx.sectionId }, html) : html;
+    }
   }
   return out;
 }
+
+const MARKED = { '': 'text', html: 'html', url: 'url', srcset: 'srcset', brand: 'brand', brandurl: 'brand' };
 
 function renderTag({ name, arg }, ctx, scope) {
   const cfg = ctx.config || {};

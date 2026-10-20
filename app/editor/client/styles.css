@@ -1,0 +1,42 @@
+/* Editor UI styles: Tailwind CSS v4, scanning only the client sources. */
+@import "tailwindcss" source(none);
+@source "./";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+  --color-accent: #4f46e5;
+  --color-accent-soft: #eef2ff;
+}
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body { @apply bg-zinc-100 text-zinc-800 antialiased; font-size: 13px; overflow: hidden; }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; }
+  input, select, textarea { font: inherit; }
+  ::selection { background: #c7d2fe; }
+}
+
+@layer components {
+  .sb-input {
+    @apply w-full min-w-0 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[12px] text-zinc-800 outline-none transition placeholder:text-zinc-400 focus:border-accent focus:ring-2 focus:ring-accent/15;
+  }
+  .sb-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white;
+  }
+  .sb-btn-primary { @apply border-accent bg-accent text-white hover:bg-indigo-700 disabled:hover:bg-accent; }
+  .sb-btn-danger { @apply text-red-600 hover:bg-red-50; }
+  .sb-icon-btn {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent;
+  }
+  .sb-label { @apply mb-1 block text-[11px] font-medium text-zinc-500; }
+  .sb-scroll { scrollbar-width: thin; scrollbar-color: #d4d4d8 transparent; }
+}
+
+.sb-checker {
+  background-image: linear-gradient(45deg, #e4e4e7 25%, transparent 25%), linear-gradient(-45deg, #e4e4e7 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e4e4e7 75%), linear-gradient(-45deg, transparent 75%, #e4e4e7 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}
